@@ -30,10 +30,44 @@ set ở tests/vn_pii_testset.jsonl):
 """
 from __future__ import annotations
 
+import re
+
+# Neo theo từ khoá tiếng Việt đứng trước con số, vì độ dài số một mình
+# không đủ phân biệt (CCCD 12 số có thể trùng độ dài với STK 12 số).
+_CCCD_RE = re.compile(r"CCCD[^\d]{0,40}(\d{12})\b", re.IGNORECASE)
+_PHONE_RE = re.compile(
+    r"(?:SĐT|số điện thoại|điện thoại)[^\d]{0,60}(0\d{9})\b", re.IGNORECASE
+)
+_BANK_RE = re.compile(
+    r"(?:STK|số tài khoản|tài khoản|chuyển khoản)[^\d]{0,40}(\d{8,16})\b",
+    re.IGNORECASE,
+)
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
 
 def detect(text: str) -> list[dict]:
-    raise NotImplementedError("BƯỚC 3a: implement PII detection")
+    entities: list[dict] = []
+    for regex, entity_type in (
+        (_CCCD_RE, "VN_CCCD"),
+        (_BANK_RE, "VN_BANK_ACCOUNT"),
+        (_PHONE_RE, "VN_PHONE"),
+    ):
+        for match in regex.finditer(text):
+            entities.append(
+                {"type": entity_type, "start": match.start(1), "end": match.end(1)}
+            )
+    for match in _EMAIL_RE.finditer(text):
+        entities.append({"type": "EMAIL", "start": match.start(), "end": match.end()})
+    entities.sort(key=lambda e: e["start"])
+    return entities
 
 
 def redact(text: str) -> str:
-    raise NotImplementedError("BƯỚC 3a: implement PII redaction")
+    result = text
+    for entity in sorted(detect(text), key=lambda e: e["start"], reverse=True):
+        result = (
+            result[: entity["start"]]
+            + f"[REDACTED_{entity['type']}]"
+            + result[entity["end"] :]
+        )
+    return result
